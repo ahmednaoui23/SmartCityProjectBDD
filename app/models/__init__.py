@@ -10,3 +10,4 @@ from .participer_a import ParticiperA
 from .vehicule import Vehicule
 from .trajet import Trajet
 from .arrondissement import Arrondissement
+from .capteur_status_history import CapteurStatusHistory

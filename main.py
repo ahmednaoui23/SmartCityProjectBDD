@@ -4,7 +4,8 @@ from app.database import engine, Base
 import app.models  # noqa: F401
 
 # Import des routers
-from app.models import (
+# Import des routers
+from app.routers import (
     proprietaire,
     capteur,
     mesure,
@@ -16,11 +17,9 @@ from app.models import (
     participer_a,
     vehicule,
     trajet,
-    arrondissement,
-    capteur_status_history
+    analytics,
 )
 
-# Création de l'application FastAPI
 app = FastAPI(title="Smart City Analytics API - Complete Backend")
 
 # Création des tables dans la base (à utiliser uniquement en développement)
