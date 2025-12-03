@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from uuid import UUID
 
 class CapteurBase(BaseModel):
     type_capteur: str
@@ -9,15 +8,14 @@ class CapteurBase(BaseModel):
     longitude: Optional[float]
     statut: Optional[str]
     date_installation: Optional[datetime]
-    id_proprietaire: Optional[int]
-    id_arrondissement: Optional[int]
+    # On retire les id internes de la sortie
+    # id_proprietaire: Optional[int]
+    # id_arrondissement: Optional[int]
 
 class CapteurCreate(CapteurBase):
+    # On garde tout pour la création
     pass
 
 class CapteurOut(CapteurBase):
-    uuid_capteur: UUID
     class Config:
-        model_config = {
-            "from_attributes": True
-        }
+        orm_mode = True

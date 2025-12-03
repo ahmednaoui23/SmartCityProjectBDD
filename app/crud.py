@@ -1,3 +1,6 @@
+from sqlite3 import IntegrityError
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Optional
@@ -12,10 +15,29 @@ from app.schemas import (
 )
 
 # ---------------- Proprietaire ----------------
-def create_proprietaire(db: Session, payload: sch_prop.ProprietaireCreate):
+
+def create_proprietaire(db: Session, payload):
+    existing = db.query(models.Proprietaire).filter(models.Proprietaire.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+
     obj = models.Proprietaire(**payload.dict())
-    db.add(obj); db.commit(); db.refresh(obj)
-    return obj
+    db.add(obj)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+    db.refresh(obj)
+
+    # Retour explicite en dict (évite tout souci de orm_mode)
+    return {
+        "nom": obj.nom,
+        "adresse": obj.adresse,
+        "telephone": obj.telephone,
+        "email": obj.email,
+        "type_proprietaire": obj.type_proprietaire,
+    }
 
 def get_proprietaire(db: Session, id_: int):
     return db.query(models.Proprietaire).filter(models.Proprietaire.id_proprietaire==id_).first()

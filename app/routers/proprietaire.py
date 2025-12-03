@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import proprietaire as sch
@@ -6,10 +6,16 @@ from app import crud
 
 router = APIRouter()
 
-@router.post("/", response_model=sch.ProprietaireOut)
+@router.post("/", response_model=sch.ProprietaireOut, status_code=status.HTTP_201_CREATED)
 def create_proprietaire(payload: sch.ProprietaireCreate, db: Session = Depends(get_db)):
-    return crud.create_proprietaire(db, payload)
-
+    result = crud.create_proprietaire(db, payload)
+    # DEBUG: afficher type et représentation courte
+    print("DEBUG create_proprietaire -> type:", type(result))
+    try:
+        print("DEBUG create_proprietaire -> repr:", repr(result))
+    except Exception:
+        print("DEBUG create_proprietaire -> repr failed")
+    return result
 @router.get("/", response_model=list[sch.ProprietaireOut])
 def list_proprietaires(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.list_proprietaires(db, skip, limit)

@@ -1,16 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-class ProprietaireCreate(BaseModel):
+class ProprietaireBase(BaseModel):
     nom: str
-    adresse: Optional[str]
-    telephone: Optional[str]
-    email: Optional[str]
-    type_proprietaire: Optional[str]
+    adresse: Optional[str] = None
+    telephone: Optional[str] = None
+    email: EmailStr
+    type_proprietaire: Optional[str] = None
 
-class ProprietaireOut(ProprietaireCreate):
-    id_proprietaire: int
+class ProprietaireCreate(ProprietaireBase):
+    pass
+
+class ProprietaireOut(ProprietaireBase):
+
     class Config:
-        model_config = {
-            "from_attributes": True
-        }
+        orm_mode = True

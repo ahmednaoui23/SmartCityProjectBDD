@@ -14,7 +14,6 @@ class InterventionCreate(BaseModel):
     uuid_capteur: Optional[UUID]
 
 class InterventionOut(InterventionCreate):
-    id_intervention: int
     class Config:
         model_config = {
             "from_attributes": True

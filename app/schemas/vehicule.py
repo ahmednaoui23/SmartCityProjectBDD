@@ -22,7 +22,6 @@ class TrajetCreate(BaseModel):
     plaque: Optional[str]
 
 class TrajetOut(TrajetCreate):
-    id_trajet: int
     class Config:
         model_config = {
             "from_attributes": True

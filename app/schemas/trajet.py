@@ -28,7 +28,6 @@ class TrajetUpdate(TrajetBase):
     pass
 
 class TrajetOut(TrajetBase):
-    id_trajet: int
 
     class Config:
         model_config = {

@@ -8,7 +8,6 @@ class ConsultationCreate(BaseModel):
     theme: Optional[str]
 
 class ConsultationOut(ConsultationCreate):
-    id_consultation: int
     class Config:
         model_config = {
             "from_attributes": True

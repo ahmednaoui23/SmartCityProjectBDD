@@ -10,8 +10,5 @@ class CitoyenCreate(BaseModel):
     preferences_mobilite: Optional[dict]
 
 class CitoyenOut(CitoyenCreate):
-    id_citoyen: int
     class Config:
-        model_config = {
-            "from_attributes": True
-        }
+        orm_mode = True

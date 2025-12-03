@@ -7,7 +7,6 @@ class TechnicienCreate(BaseModel):
     certification: Optional[str]
 
 class TechnicienOut(TechnicienCreate):
-    id_technicien: int
     class Config:
         model_config = {
             "from_attributes": True
