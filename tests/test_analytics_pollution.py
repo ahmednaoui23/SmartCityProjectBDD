@@ -7,10 +7,10 @@ Tests verify:
 - Proper calculation of avg_by_measure and avg_by_sensor
 - Filtering by pollutant type
 
-Note: These tests use an in-memory SQLite database for simplicity.
-The pollution_24h function uses PostgreSQL-specific SQL (intervals, COALESCE, etc.)
-which may not work identically in SQLite. For production testing with PostgreSQL,
-use a test database with PostgreSQL and adjust the SQL query accordingly.
+Note: These tests require PostgreSQL as the pollution_24h function uses
+PostgreSQL-specific SQL features (intervals, COALESCE, etc.).
+Tests are skipped by default. To run them, set TEST_WITH_POSTGRES=true
+and provide a TEST_DATABASE_URL environment variable.
 """
 import pytest
 from datetime import datetime, timedelta

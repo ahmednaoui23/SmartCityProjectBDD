@@ -6,9 +6,16 @@ from app import crud
 router = APIRouter()
 
 @router.get("/pollution_24h")
-def pollution_24h(db: Session = Depends(get_db)):
-    rows = crud.pollution_24h(db)
-    return [{"id_arrondissement": r[0], "nom": r[1], "avg_pm25": float(r[2]) if r[2] is not None else None} for r in rows]
+def pollution_24h(pollutant: str = "PM2.5", top_n: int = 10, db: Session = Depends(get_db)):
+    rows = crud.pollution_24h(db, pollutant=pollutant, top_n=top_n)
+    return [{
+        "id_arrondissement": r[0],
+        "nom": r[1],
+        "avg_by_measure": float(r[2]) if r[2] is not None else None,
+        "avg_by_sensor": float(r[3]) if r[3] is not None else None,
+        "nb_capteurs": int(r[4]) if r[4] is not None else 0,
+        "nb_mesures": int(r[5]) if r[5] is not None else 0
+    } for r in rows]
 
 @router.get("/availability_by_arrondissement")
 def availability(db: Session = Depends(get_db)):
