@@ -185,19 +185,34 @@ def create_trajet(db: Session, payload: sch_veh.TrajetCreate):
     db.add(obj); db.commit(); db.refresh(obj); return obj
 
 # ---------------- Analytics (ORM implementations) ----------------
-def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
+def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10, order_by: str = "measure"):
     """
-    ORM-based implementation returning top arrondissements for the last 24 hours.
-    - Filters only active sensors (last status from capteur_status_history if present,
-      otherwise falls back to capteur.statut).
-    - Returns two metrics per arrondissement:
-        * avg_by_measure : average of all measurements (weighted by number of measures), rounded to 2 decimals
-        * avg_by_sensor  : average of per-sensor averages (each sensor has equal weight), rounded to 2 decimals
-    - Also returns nb_mesures and nb_capteurs.
+    ORM implementation (stable, self-contained) that returns the top arrondissements
+    by pollution over the last 24 hours.
+
+    Behavior:
+    - Uses only capteurs considered 'active'. Resolved status = last capteur_status_history.status
+      when present, otherwise capteur.statut.
+    - Two metrics returned per arrondissement:
+        * avg_by_measure : average of all mesures (weighted by number of mesures), rounded to 2 decimals
+        * avg_by_sensor  : average of per-capteur averages (each capteur has equal weight), rounded to 2 decimals
+    - Also returns nb_mesures, nb_capteurs and rank (1 = most polluted by chosen order).
+    - Parameters:
+        db        : SQLAlchemy Session
+        pollutant : pollutant name (default 'PM2.5')
+        top_n     : number of arrondissements to return
+        order_by  : 'measure' (default) or 'sensor' to choose sorting key
+    - Deterministic ordering: primary = chosen metric desc, secondary = nb_mesures desc, tertiary = id_arrondissement asc
     """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func, desc, asc, case
+
+    if order_by not in ("measure", "sensor"):
+        raise ValueError("order_by must be 'measure' or 'sensor'")
+
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
-    # last status timestamp per capteur
+    # Subquery: latest status timestamp per capteur
     last_ts_subq = (
         db.query(
             models.CapteurStatusHistory.uuid_capteur.label("uuid"),
@@ -207,7 +222,7 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .subquery()
     )
 
-    # last status row per capteur
+    # Subquery: last status row per capteur (uuid_capteur, status)
     last_status_subq = (
         db.query(
             models.CapteurStatusHistory.uuid_capteur.label("uuid_capteur"),
@@ -221,7 +236,7 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .subquery()
     )
 
-    # active capteurs (coalesce last_status, capteur.statut) == 'active'
+    # Active capteurs: those whose resolved status = 'active'
     active_caps_subq = (
         db.query(models.Capteur.uuid_capteur.label("uuid_capteur"))
         .outerjoin(last_status_subq, models.Capteur.uuid_capteur == last_status_subq.c.uuid_capteur)
@@ -229,13 +244,13 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .subquery()
     )
 
-    # agg_by_measure: average of all mesures (weighted)
+    # Aggregate by measure (weighted by number of mesures)
     agg_by_measure_q = (
         db.query(
             models.Capteur.id_arrondissement.label("id_arrondissement"),
             models.Arrondissement.nom.label("nom"),
             func.round(func.avg(models.Mesure.valeur), 2).label("avg_by_measure"),
-            func.count().label("nb_mesures"),
+            func.count(models.Mesure.id).label("nb_mesures"),
             func.count(func.distinct(models.Mesure.uuid_capteur)).label("nb_capteurs"),
         )
         .join(models.Capteur, models.Mesure.uuid_capteur == models.Capteur.uuid_capteur)
@@ -248,7 +263,7 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .group_by(models.Capteur.id_arrondissement, models.Arrondissement.nom)
     ).subquery()
 
-    # per_sensor average
+    # Per-sensor average over the window
     per_sensor_q = (
         db.query(
             models.Mesure.uuid_capteur.label("uuid_capteur"),
@@ -266,6 +281,7 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .group_by(models.Mesure.uuid_capteur, models.Capteur.id_arrondissement, models.Arrondissement.nom)
     ).subquery()
 
+    # Aggregate by sensor averages (each sensor contributes equally)
     agg_by_sensor_q = (
         db.query(
             per_sensor_q.c.id_arrondissement.label("id_arrondissement"),
@@ -275,6 +291,7 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
         .group_by(per_sensor_q.c.id_arrondissement, per_sensor_q.c.nom)
     ).subquery()
 
+    # Final join: combine both metrics
     final_q = (
         db.query(
             agg_by_measure_q.c.id_arrondissement,
@@ -289,19 +306,35 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
             (agg_by_measure_q.c.id_arrondissement == agg_by_sensor_q.c.id_arrondissement)
             & (agg_by_measure_q.c.nom == agg_by_sensor_q.c.nom),
         )
-        .order_by(desc(agg_by_measure_q.c.avg_by_measure))
-        .limit(top_n)
     )
 
+    # Determine ordering
+    if order_by == "sensor":
+        # order by sensor metric first (nulls last), then nb_mesures, then id
+        final_q = final_q.order_by(
+            desc(agg_by_sensor_q.c.avg_by_sensor.nullslast()),
+            desc(agg_by_measure_q.c.nb_mesures),
+            asc(agg_by_measure_q.c.id_arrondissement),
+        )
+    else:
+        final_q = final_q.order_by(
+            desc(agg_by_measure_q.c.avg_by_measure.nullslast()),
+            desc(agg_by_measure_q.c.nb_mesures),
+            asc(agg_by_measure_q.c.id_arrondissement),
+        )
+
+    final_q = final_q.limit(top_n)
     results = final_q.all()
 
+    # Normalize and add rank
     out = []
-    for row in results:
+    for idx, row in enumerate(results, start=1):
         mapping = getattr(row, "_mapping", None)
         if mapping is not None:
             m = mapping
             out.append({
-                "id_arrondissement": m["id_arrondissement"],
+                "rank": idx,
+
                 "nom": m["nom"],
                 "avg_by_measure": float(m["avg_by_measure"]) if m["avg_by_measure"] is not None else None,
                 "avg_by_sensor": float(m["avg_by_sensor"]) if m["avg_by_sensor"] is not None else None,
@@ -310,7 +343,8 @@ def pollution_24h(db: Session, pollutant: str = "PM2.5", top_n: int = 10):
             })
         else:
             out.append({
-                "id_arrondissement": row[0],
+                "rank": idx,
+
                 "nom": row[1],
                 "avg_by_measure": float(row[2]) if row[2] is not None else None,
                 "avg_by_sensor": float(row[3]) if row[3] is not None else None,
