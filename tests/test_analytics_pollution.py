@@ -39,11 +39,11 @@ def db_session():
     """
     if not USE_POSTGRES:
         pytest.skip("These tests require PostgreSQL. Set TEST_WITH_POSTGRES=true to run them.")
-    
+
     engine = create_engine(TEST_DATABASE_URL)
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    
+
     session = SessionLocal()
     try:
         yield session
@@ -62,11 +62,11 @@ def test_pollution_24h_basic(db_session):
     arr1 = models.Arrondissement(id_arrondissement=1, nom="Arrondissement 1")
     db_session.add(arr1)
     db_session.commit()
-    
+
     # Create 2 active sensors
     sensor1_uuid = uuid4()
     sensor2_uuid = uuid4()
-    
+
     sensor1 = models.Capteur(
         uuid_capteur=sensor1_uuid,
         type_capteur="air_quality",
@@ -82,37 +82,37 @@ def test_pollution_24h_basic(db_session):
     db_session.add(sensor1)
     db_session.add(sensor2)
     db_session.commit()
-    
+
     # Create measures for the last 24 hours
     # Sensor 1: values [10.0, 20.0] -> avg = 15.0
     # Sensor 2: values [30.0, 40.0] -> avg = 35.0
     # avg_by_measure: (10+20+30+40)/4 = 25.0
     # avg_by_sensor: (15.0+35.0)/2 = 25.0
-    
+
     now = datetime.utcnow()
-    
+
     measures = [
         models.Mesure(uuid_capteur=sensor1_uuid, ts=now - timedelta(hours=1),
-                     pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor1_uuid, ts=now - timedelta(hours=2),
-                     pollutant="PM2.5", valeur=20.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=20.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor2_uuid, ts=now - timedelta(hours=1),
-                     pollutant="PM2.5", valeur=30.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=30.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor2_uuid, ts=now - timedelta(hours=2),
-                     pollutant="PM2.5", valeur=40.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=40.0, unite="µg/m³"),
     ]
-    
+
     for m in measures:
         db_session.add(m)
     db_session.commit()
-    
+
     # Call pollution_24h
     results = crud.pollution_24h(db_session, pollutant="PM2.5", top_n=10)
-    
+
     # Verify results
     assert len(results) == 1
     row = results[0]
-    
+
     assert row[0] == 1  # id_arrondissement
     assert row[1] == "Arrondissement 1"  # nom
     assert row[2] == 25.0  # avg_by_measure
@@ -130,11 +130,11 @@ def test_pollution_24h_exclude_inactive(db_session):
     arr1 = models.Arrondissement(id_arrondissement=1, nom="Arrondissement 1")
     db_session.add(arr1)
     db_session.commit()
-    
+
     # Create 2 sensors: one active, one inactive
     sensor_active = uuid4()
     sensor_inactive = uuid4()
-    
+
     s1 = models.Capteur(
         uuid_capteur=sensor_active,
         type_capteur="air_quality",
@@ -150,7 +150,7 @@ def test_pollution_24h_exclude_inactive(db_session):
     db_session.add(s1)
     db_session.add(s2)
     db_session.commit()
-    
+
     # Add status history to mark sensor 2 as inactive
     now = datetime.utcnow()
     status_history = models.CapteurStatusHistory(
@@ -160,33 +160,33 @@ def test_pollution_24h_exclude_inactive(db_session):
     )
     db_session.add(status_history)
     db_session.commit()
-    
+
     # Add measures for both sensors
     # Active sensor: values [10.0, 20.0] -> avg = 15.0
     # Inactive sensor: values [100.0, 200.0] -> should be excluded
-    
+
     measures = [
         models.Mesure(uuid_capteur=sensor_active, ts=now - timedelta(hours=1),
-                     pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor_active, ts=now - timedelta(hours=2),
-                     pollutant="PM2.5", valeur=20.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=20.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor_inactive, ts=now - timedelta(hours=1),
-                     pollutant="PM2.5", valeur=100.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=100.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor_inactive, ts=now - timedelta(hours=2),
-                     pollutant="PM2.5", valeur=200.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=200.0, unite="µg/m³"),
     ]
-    
+
     for m in measures:
         db_session.add(m)
     db_session.commit()
-    
+
     # Call pollution_24h
     results = crud.pollution_24h(db_session, pollutant="PM2.5", top_n=10)
-    
+
     # Verify results - only the active sensor should be included
     assert len(results) == 1
     row = results[0]
-    
+
     assert row[0] == 1  # id_arrondissement
     assert row[1] == "Arrondissement 1"  # nom
     assert row[2] == 15.0  # avg_by_measure (only from active sensor)
@@ -204,7 +204,7 @@ def test_pollution_24h_different_pollutant(db_session):
     arr1 = models.Arrondissement(id_arrondissement=1, nom="Arrondissement 1")
     db_session.add(arr1)
     db_session.commit()
-    
+
     # Create active sensor
     sensor_uuid = uuid4()
     sensor = models.Capteur(
@@ -215,29 +215,29 @@ def test_pollution_24h_different_pollutant(db_session):
     )
     db_session.add(sensor)
     db_session.commit()
-    
+
     # Add measures for PM10 and PM2.5
     now = datetime.utcnow()
     measures = [
         models.Mesure(uuid_capteur=sensor_uuid, ts=now - timedelta(hours=1),
-                     pollutant="PM10", valeur=50.0, unite="µg/m³"),
+                      pollutant="PM10", valeur=50.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor_uuid, ts=now - timedelta(hours=2),
-                     pollutant="PM10", valeur=60.0, unite="µg/m³"),
+                      pollutant="PM10", valeur=60.0, unite="µg/m³"),
         models.Mesure(uuid_capteur=sensor_uuid, ts=now - timedelta(hours=1),
-                     pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
+                      pollutant="PM2.5", valeur=10.0, unite="µg/m³"),
     ]
-    
+
     for m in measures:
         db_session.add(m)
     db_session.commit()
-    
+
     # Query for PM10
     results = crud.pollution_24h(db_session, pollutant="PM10", top_n=10)
-    
+
     # Verify only PM10 data is returned
     assert len(results) == 1
     row = results[0]
-    
+
     assert row[2] == 55.0  # avg_by_measure (50+60)/2
     assert row[3] == 55.0  # avg_by_sensor
     assert row[5] == 2  # nb_mesures (only 2 PM10 measures)
@@ -252,7 +252,7 @@ def test_pollution_24h_top_n_limit(db_session):
         arr = models.Arrondissement(id_arrondissement=i, nom=f"Arrondissement {i}")
         db_session.add(arr)
     db_session.commit()
-    
+
     # Create sensors and measures for each arrondissement
     now = datetime.utcnow()
     for i in range(1, 4):
@@ -265,7 +265,7 @@ def test_pollution_24h_top_n_limit(db_session):
         )
         db_session.add(sensor)
         db_session.commit()
-        
+
         # Add measure with different values for each arrondissement
         measure = models.Mesure(
             uuid_capteur=sensor_uuid,
@@ -276,10 +276,10 @@ def test_pollution_24h_top_n_limit(db_session):
         )
         db_session.add(measure)
     db_session.commit()
-    
+
     # Query with top_n=2
     results = crud.pollution_24h(db_session, pollutant="PM2.5", top_n=2)
-    
+
     # Should return only 2 arrondissements (with highest avg_by_measure)
     assert len(results) == 2
     # Results should be ordered by avg_by_measure DESC
