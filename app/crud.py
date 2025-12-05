@@ -184,17 +184,61 @@ def create_trajet(db: Session, payload: sch_veh.TrajetCreate):
     db.add(obj); db.commit(); db.refresh(obj); return obj
 
 # ---------------- Analytics (raw SQL) ----------------
-def pollution_24h(db: Session):
-    sql = """
-    SELECT a.id_arrondissement, a.nom, AVG(m.valeur)::float AS avg_pm25
-    FROM mesure m
-    JOIN capteur c ON m.uuid_capteur = c.uuid_capteur
-    JOIN arrondissement a ON c.id_arrondissement = a.id_arrondissement
-    WHERE m.pollutant = 'PM2.5' AND m.ts >= now() - interval '24 hours'
-    GROUP BY a.id_arrondissement, a.nom
-    ORDER BY avg_pm25 DESC;
+def pollution_24h(db: Session, pollutant: str = 'PM2.5', top_n: int = 10):
     """
-    return db.execute(text(sql)).fetchall()
+    Compute pollution metrics by arrondissement for the last 24 hours.
+    
+    Only includes sensors considered active based on:
+    - Latest entry in capteur_status_history if present
+    - Otherwise falls back to capteur.statut
+    
+    Returns two metrics per arrondissement:
+    - avg_by_measure: average of all measurement values (current behavior)
+    - avg_by_sensor: average of per-sensor averages (each sensor has equal weight)
+    
+    Also returns nb_mesures and nb_capteurs for transparency.
+    Results are ordered by avg_by_measure DESC and limited by top_n.
+    """
+    sql = """
+    WITH last_status AS (
+      SELECT DISTINCT ON (uuid_capteur) uuid_capteur, status
+      FROM capteur_status_history
+      ORDER BY uuid_capteur, ts DESC
+    ),
+    active_sensors AS (
+      SELECT c.uuid_capteur
+      FROM capteur c
+      LEFT JOIN last_status ls ON c.uuid_capteur = ls.uuid_capteur
+      WHERE COALESCE(ls.status, c.statut) = 'active'
+    ),
+    measures_24h AS (
+      SELECT m.uuid_capteur, m.valeur, c.id_arrondissement
+      FROM mesure m
+      JOIN active_sensors acs ON m.uuid_capteur = acs.uuid_capteur
+      JOIN capteur c ON m.uuid_capteur = c.uuid_capteur
+      WHERE m.pollutant = :pollutant 
+        AND m.ts >= now() - interval '24 hours'
+    ),
+    sensor_averages AS (
+      SELECT id_arrondissement, uuid_capteur, AVG(valeur) as sensor_avg
+      FROM measures_24h
+      GROUP BY id_arrondissement, uuid_capteur
+    )
+    SELECT 
+      a.id_arrondissement,
+      a.nom,
+      ROUND(AVG(m.valeur)::numeric, 2)::float AS avg_by_measure,
+      ROUND(AVG(sa.sensor_avg)::numeric, 2)::float AS avg_by_sensor,
+      COUNT(DISTINCT m.uuid_capteur)::int AS nb_capteurs,
+      COUNT(m.valeur)::int AS nb_mesures
+    FROM measures_24h m
+    JOIN arrondissement a ON m.id_arrondissement = a.id_arrondissement
+    JOIN sensor_averages sa ON m.id_arrondissement = sa.id_arrondissement
+    GROUP BY a.id_arrondissement, a.nom
+    ORDER BY avg_by_measure DESC
+    LIMIT :top_n;
+    """
+    return db.execute(text(sql), {"pollutant": pollutant, "top_n": top_n}).fetchall()
 
 def availability_by_arrondissement(db: Session):
     sql = """
